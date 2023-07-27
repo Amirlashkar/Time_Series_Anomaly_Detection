@@ -1,0 +1,3 @@
+variables:
+  mean_chunk_size: 18
+  dataset_timestamps: 40
