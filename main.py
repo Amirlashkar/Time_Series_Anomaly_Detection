@@ -11,12 +11,6 @@ from keras.models import load_model
 from keras import Sequential
 import keras
 
-
-input_path = os.path.join(os.getcwd(), "timeseries")
-output_path = "./output"
-if not os.path.exists(output_path):
-    os.mkdir(output_path)
-
 class AnomalyDetector:
 
     def __init__(self):
@@ -166,29 +160,27 @@ class AnomalyDetector:
             return "Predict Pipeline"
         
         def __call__(self, timeseries) -> pd.DataFrame:
-            pass
-
-        def test_predict(self, data_tuple):
+            data_tuple = AnomalyDetector.PreProcessPipeline(timeseries)
+            test_score_df = self.test_predict(data_tuple, timeseries)
+            indexes = self.anomaly_detection(test_score_df)
+            output = self.create_output(timeseries, indexes)
+            return output
+        
+        def test_predict(self, data_tuple, timeseries):
             X_test, _ = data_tuple
-            # threshold2 = A - (2 * STD)
             X_test_pred = self.model.predict(X_test)
             test_mae_loss = np.mean(np.abs(X_test_pred - X_test), axis=1)
-            test_score_df = pd.DataFrame(index=test[self.dataset_timestamps:].index)
+            test_score_df = pd.DataFrame(index=timeseries[self.dataset_timestamps:].index)
             test_score_df['loss'] = test_mae_loss
-            # test_score_df['threshold2'] = threshold2
-            test_score_df['threshold'] = threshold
+            test_score_df['threshold'] = self.threshold
             test_score_df['above_anomaly'] = test_score_df.loss > test_score_df.threshold
-            # test_score_df['below_anomaly'] = test_score_df.loss < test_score_df.threshold2
-            test_score_df['value'] = test[self.dataset_timestamps:].value
+            test_score_df['value'] = timeseries[self.dataset_timestamps:].value
             return test_score_df
         
-        def anomaly_detection(self):
-            test_score_df = AnomalyDetector.Training_Pipeline().model_train()
+        def anomaly_detection(self, test_score_df) -> Any:
             model_data = self.model_data
             above_anomalies = test_score_df[test_score_df.above_anomaly == True]
-            # below_anomalies = test_score_df[test_score_df.below_anomaly == True]
             above_index = above_anomalies.index.tolist()
-            # below_index = below_anomalies.index.tolist()
             anomalies_indexes = above_index
 
             a = []
@@ -214,22 +206,10 @@ class AnomalyDetector:
             indexes = detected_anomalies.index
             return indexes
 
-        def create_output(self, anomaly_indexes):
-            df = self.df
-            indexes = anomaly_indexes
-            out = df.copy()
+        def create_output(self, timeseries, anomaly_indexes) ->pd.DataFrame:
+            out = timeseries.copy()
             out["label"] = 0
-            out.loc[indexes, "label"] = 1
+            out.loc[anomaly_indexes, "label"] = 1
             out = out.rename(columns={"timestamp": "time"})
             out.set_index("time", inplace=True)
             return out
-
-
-# if __name__ == '__main__':
-#     for filename in os.listdir(input_path):
-#         df = pd.read_csv(os.path.join(input_path, filename))
-#         print(filename, len(df))
-#         anomaly_detector = AnomalyDetector.TrainingPipeline(df)
-#         result = anomaly_detector.create_output()
-#         result.to_csv(os.path.join(output_path, filename))
-#         print(f'item {filename} processed.')
