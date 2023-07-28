@@ -21,7 +21,7 @@ class AnomalyDetector:
 
     def __init__(self):
         with open('config.yml', 'r') as f:
-                config = list(yaml.load_all(f, Loader=SafeLoader))[0]["variables"]
+                config = yaml.safe_load(f)["variables"]
         self.config = config
 
     class PreProcessPipeline:
@@ -36,7 +36,7 @@ class AnomalyDetector:
             data_tuple = self.dataset(df)
             return data_tuple
         
-        def mean_chunk(self, seq, size):
+        def mean_chunk(self, seq, size) -> list:
             num = len(seq) // size
             avg = len(seq) / float(num)
             out = []
@@ -94,7 +94,11 @@ class AnomalyDetector:
             config = AnomalyDetector().config
             self.epochs = config["train_epochs"]
 
-        def __call__(self, data_tuple) -> None:
+        def __str__(self) -> str:
+            return "Training Pipeline"
+
+        def __call__(self, timeseries) -> None:
+            data_tuple = AnomalyDetector.PreProcessPipeline(timeseries)
             model = self.create_model(data_tuple)
             self.model_train(data_tuple, model)
         
@@ -114,8 +118,8 @@ class AnomalyDetector:
             model.compile(optimizer="adam", loss="mae")
             return model
 
-        def model_train(self, data_tuple, model):
-            X_train, Y_train, X_test, Y_test, train, test = data_tuple
+        def model_train(self, data_tuple, model) -> None:
+            X_train, Y_train = data_tuple
             model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
                 filepath="weights.h5",
                 save_weights_only=True,
@@ -136,32 +140,45 @@ class AnomalyDetector:
             train_mae_loss = np.mean(np.abs(X_train_pred - X_train), axis=1)
             A = np.mean(train_mae_loss)
             STD = np.std(train_mae_loss)
-            threshold = A + (2 * STD)
+            threshold = A + STD
 
             self.config["threshold"] = threshold
-            with open("config.yml", "wb") as f:
-                yaml.dump(self.config, f)
+            with open("config.yml", "w") as f:
+                yaml.safe_dump(self.config, f, default_flow_style=False)
 
     class PredictPipeline:
 
-        def __init__(self, timeseries):
-            if not os.path.exists("./model.h5"):
+        def __init__(self):
+            config = AnomalyDetector().config
+            self.threshold = config["threshold"]
+            if self.threshold == None:
+                raise ValueError("Threshold value is not valid and is None by now ; train a model with \
+                                 'AnomalyDetector.TrainingPipeline' to change it")
+            
+            if not os.path.exists("model.h5"):
                 raise FileNotFoundError("Download model.h5 from 'https://github.com/Amirlashkar/Time_Series_Anomaly_Detection' \
                                         or if you have data to train, use Training_Pipeline.run_pipeline to create model.h5")
             else:
                 self.model = load_model("model.h5")
                 self.model.load_weights("weights.h5")
+        
+        def __str__(self) -> str:
+            return "Predict Pipeline"
+        
+        def __call__(self, timeseries) -> pd.DataFrame:
+            pass
 
-        def test_predict(self):
-            threshold2 = A - (2 * STD)
+        def test_predict(self, data_tuple):
+            X_test, _ = data_tuple
+            # threshold2 = A - (2 * STD)
             X_test_pred = self.model.predict(X_test)
             test_mae_loss = np.mean(np.abs(X_test_pred - X_test), axis=1)
             test_score_df = pd.DataFrame(index=test[self.dataset_timestamps:].index)
             test_score_df['loss'] = test_mae_loss
-            test_score_df['threshold2'] = threshold2
-            test_score_df['threshold1'] = threshold
-            test_score_df['above_anomaly'] = test_score_df.loss > test_score_df.threshold1
-            test_score_df['below_anomaly'] = test_score_df.loss < test_score_df.threshold2
+            # test_score_df['threshold2'] = threshold2
+            test_score_df['threshold'] = threshold
+            test_score_df['above_anomaly'] = test_score_df.loss > test_score_df.threshold
+            # test_score_df['below_anomaly'] = test_score_df.loss < test_score_df.threshold2
             test_score_df['value'] = test[self.dataset_timestamps:].value
             return test_score_df
         
@@ -169,10 +186,10 @@ class AnomalyDetector:
             test_score_df = AnomalyDetector.Training_Pipeline().model_train()
             model_data = self.model_data
             above_anomalies = test_score_df[test_score_df.above_anomaly == True]
-            below_anomalies = test_score_df[test_score_df.below_anomaly == True]
+            # below_anomalies = test_score_df[test_score_df.below_anomaly == True]
             above_index = above_anomalies.index.tolist()
-            below_index = below_anomalies.index.tolist()
-            anomalies_indexes = above_index + below_index
+            # below_index = below_anomalies.index.tolist()
+            anomalies_indexes = above_index
 
             a = []
             for index in anomalies_indexes:
@@ -208,11 +225,11 @@ class AnomalyDetector:
             return out
 
 
-if __name__ == '__main__':
-    for filename in os.listdir(input_path):
-        df = pd.read_csv(os.path.join(input_path, filename))
-        print(filename, len(df))
-        anomaly_detector = AnomalyDetector.TrainingPipeline(df)
-        result = anomaly_detector.create_output()
-        result.to_csv(os.path.join(output_path, filename))
-        print(f'item {filename} processed.')
+# if __name__ == '__main__':
+#     for filename in os.listdir(input_path):
+#         df = pd.read_csv(os.path.join(input_path, filename))
+#         print(filename, len(df))
+#         anomaly_detector = AnomalyDetector.TrainingPipeline(df)
+#         result = anomaly_detector.create_output()
+#         result.to_csv(os.path.join(output_path, filename))
+#         print(f'item {filename} processed.')

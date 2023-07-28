@@ -1,5 +1,5 @@
 variables:
-  mean_chunk_size: 18
   dataset_timestamps: 40
-  threshold:
+  mean_chunk_size: 18
+  threshold: 100
   train_epochs: 10
