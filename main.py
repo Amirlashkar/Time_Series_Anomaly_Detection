@@ -25,8 +25,8 @@ class AnomalyDetector:
             self.mean_chunk_size = config["mean_chunk_size"]
             self.dataset_timestamps = config["dataset_timestamps"]
 
-        def __call__(self, timeseries) -> tuple:
-            df = self.double_variance(timeseries)
+        def __call__(self, timeseries_df, stage) -> tuple:
+            df = self.double_variance(timeseries_df, stage)
             data_tuple = self.dataset(df)
             return data_tuple
         
@@ -55,7 +55,7 @@ class AnomalyDetector:
                 Ys.append(Y.iloc[i + timesteps])
             return np.array(Xs), np.array(Ys)
 
-        def double_variance(self, df) -> pd.DataFrame:
+        def double_variance(self, df, stage) -> pd.DataFrame:
             """
             first component of the training pipeline ; it gets raw dataframe and drive another dataframe from it 
             with desired feature which is called double variance ; double variance is good enough for magnifying
@@ -66,6 +66,8 @@ class AnomalyDetector:
             df["variance_mean"] = self.mean_chunk(df["variance"], self.mean_chunk_size)
             df["double_variance"] = (df["variance"] - df["variance_mean"]) ** 2
             df.drop(["mean", "value", "variance", "variance_mean"], axis=1, inplace=True)
+            if stage == "train":
+                df.loc[df["label"] == 1, "value"] = 0
             df = df.rename(columns={"double_variance": "value"})
             return df
 
@@ -92,7 +94,8 @@ class AnomalyDetector:
             return "Training Pipeline"
 
         def __call__(self, timeseries) -> None:
-            data_tuple = AnomalyDetector.PreProcessPipeline(timeseries)
+            preprocess = AnomalyDetector.PreProcessPipeline()
+            data_tuple = preprocess(timeseries, "train")
             model = self.create_model(data_tuple)
             self.model_train(data_tuple, model)
         
@@ -160,7 +163,7 @@ class AnomalyDetector:
             return "Predict Pipeline"
         
         def __call__(self, timeseries) -> pd.DataFrame:
-            data_tuple = AnomalyDetector.PreProcessPipeline(timeseries)
+            data_tuple = AnomalyDetector.PreProcessPipeline(timeseries, stage="test")
             test_score_df = self.test_predict(data_tuple, timeseries)
             indexes = self.anomaly_detection(test_score_df)
             output = self.create_output(timeseries, indexes)
@@ -208,8 +211,8 @@ class AnomalyDetector:
 
         def create_output(self, timeseries, anomaly_indexes) ->pd.DataFrame:
             out = timeseries.copy()
-            out["label"] = 0
-            out.loc[anomaly_indexes, "label"] = 1
+            out["create_label"] = 0
+            out.loc[anomaly_indexes, "created_label"] = 1
             out = out.rename(columns={"timestamp": "time"})
             out.set_index("time", inplace=True)
             return out
