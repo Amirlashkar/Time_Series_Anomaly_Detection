@@ -7,9 +7,9 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 import tensorflow as tf
-from keras.models import load_model
-from keras import Sequential
-import keras
+from tensorflow.keras.models import load_model
+from tensorflow.keras import Sequential
+from tensorflow import keras
 
 class AnomalyDetector:
 
@@ -66,9 +66,9 @@ class AnomalyDetector:
             df["variance_mean"] = self.mean_chunk(df["variance"], self.mean_chunk_size)
             df["double_variance"] = (df["variance"] - df["variance_mean"]) ** 2
             df.drop(["mean", "value", "variance", "variance_mean"], axis=1, inplace=True)
+            df = df.rename(columns={"double_variance": "value"})
             if stage == "train":
                 df.loc[df["label"] == 1, "value"] = 0
-            df = df.rename(columns={"double_variance": "value"})
             return df
 
         def dataset(self, df) -> tuple:
@@ -93,13 +93,15 @@ class AnomalyDetector:
         def __str__(self) -> str:
             return "Training Pipeline"
 
-        def __call__(self, timeseries) -> None:
+        def __call__(self, timeseries, gpu=False) -> None:
             preprocess = AnomalyDetector.PreProcessPipeline()
             data_tuple = preprocess(timeseries, "train")
-            model = self.create_model(data_tuple)
+            model = self.create_model(data_tuple, gpu)
             self.model_train(data_tuple, model)
         
-        def create_model(self, data_tuple) -> keras.Model:
+        def create_model(self, data_tuple, gpu) -> keras.Model:
+            if gpu:
+                tf.config.set_visible_devices([], 'GPU')
             X_train, Y_train = data_tuple
             model = Sequential()
             model.add(keras.layers.LSTM(
@@ -113,6 +115,7 @@ class AnomalyDetector:
             model.add(keras.layers.TimeDistributed(keras.layers.Dense(
                 units=X_train.shape[2])))
             model.compile(optimizer="adam", loss="mae")
+            model.save("model.h5")
             return model
 
         def model_train(self, data_tuple, model) -> None:
@@ -132,7 +135,6 @@ class AnomalyDetector:
                 shuffle=False,
                 callbacks=[model_checkpoint_callback]
             )
-            model.save("model.h5")
             X_train_pred = model.predict(X_train)
             train_mae_loss = np.mean(np.abs(X_train_pred - X_train), axis=1)
             A = np.mean(train_mae_loss)
